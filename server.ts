@@ -801,4 +801,10 @@ async function startServer() {
   });
 }
 
-startServer();
+// Export the app instance for Vercel Serverless Functions
+export default app;
+
+// Only bind to local port when not in a serverless environment like Vercel
+if (!process.env.VERCEL) {
+  startServer();
+}
