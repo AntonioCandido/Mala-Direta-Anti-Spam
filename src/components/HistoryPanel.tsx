@@ -24,13 +24,29 @@ import { CampaignHistory, Recipient } from '../types';
 import PdfExportModal from './PdfExportModal';
 import HistoryDashboard from './HistoryDashboard';
 import { safeApiCall, API_ROUTES, HistoryListResponse, HistoryDeleteResponse } from '../api';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer
+} from 'recharts';
 
 interface HistoryPanelProps {
   onRestore: (campaign: CampaignHistory) => void;
 }
 
 export default function HistoryPanel({ onRestore }: HistoryPanelProps) {
-  const [history, setHistory] = useState<CampaignHistory[]>([]);
+  const [history, setHistory] = useState<CampaignHistory[]>(() => {
+    try {
+      const cached = localStorage.getItem('mala_direta_campaign_history_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
@@ -50,6 +66,11 @@ export default function HistoryPanel({ onRestore }: HistoryPanelProps) {
     
     if (result.success && result.history) {
       setHistory(result.history);
+      try {
+        localStorage.setItem('mala_direta_campaign_history_cache', JSON.stringify(result.history));
+      } catch (err) {
+        console.error('Erro ao cachear histórico no localStorage:', err);
+      }
     } else {
       setError(result.error || 'Erro ao carregar o histórico de envios.');
     }
@@ -69,7 +90,15 @@ export default function HistoryPanel({ onRestore }: HistoryPanelProps) {
     });
     
     if (result.success) {
-      setHistory(prev => prev.filter(item => item.id !== id));
+      setHistory(prev => {
+        const updated = prev.filter(item => item.id !== id);
+        try {
+          localStorage.setItem('mala_direta_campaign_history_cache', JSON.stringify(updated));
+        } catch (err) {
+          console.error(err);
+        }
+        return updated;
+      });
       if (expandedCampaignId === id) {
         setExpandedCampaignId(null);
       }
@@ -87,6 +116,11 @@ export default function HistoryPanel({ onRestore }: HistoryPanelProps) {
     
     if (result.success) {
       setHistory([]);
+      try {
+        localStorage.removeItem('mala_direta_campaign_history_cache');
+      } catch (err) {
+        console.error(err);
+      }
       setExpandedCampaignId(null);
     } else {
       alert(result.error || 'Erro ao limpar histórico.');
@@ -123,6 +157,27 @@ export default function HistoryPanel({ onRestore }: HistoryPanelProps) {
 
   // Find the currently expanded campaign
   const expandedCampaign = history.find(item => item.id === expandedCampaignId);
+
+  // Computa os dados das campanhas salvas no localStorage/cache para o mini-gráfico de barras
+  const minichartData = React.useMemo(() => {
+    return [...history]
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(-8) // Mostrar no máximo as últimas 8 campanhas para preservar a nitidez e legibilidade
+      .map(item => {
+        const d = new Date(item.date);
+        const dayStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const labelStr = item.templateName 
+          ? (item.templateName.length > 12 ? item.templateName.slice(0, 10) + '...' : item.templateName)
+          : 'Sem Nome';
+        return {
+          name: `${dayStr} ${labelStr}`,
+          fullName: item.templateName || 'Modelo Geral',
+          Sucesso: item.sent || 0,
+          Falha: item.failed || 0,
+          Total: item.total || 0
+        };
+      });
+  }, [history]);
 
   // Filter recipients in details view
   const getFilteredRecipients = () => {
@@ -287,6 +342,65 @@ export default function HistoryPanel({ onRestore }: HistoryPanelProps) {
         </div>
       ) : (
         <div className="space-y-4">
+          {/* Pequeno Gráfico de Barras - Taxa de Sucesso vs Falha (localStorage/Cache) */}
+          <div className="bg-slate-50/60 border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row gap-6 items-center justify-between">
+            <div className="space-y-1 md:max-w-xs w-full text-center md:text-left">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100/65">
+                LocalStorage Cache
+              </span>
+              <h4 className="text-xs font-extrabold text-slate-800">Desempenho Recente</h4>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                Taxa de sucesso versus falha das campanhas passadas armazenadas localmente. Passe o mouse sobre as barras para ver detalhes rápidos.
+              </p>
+            </div>
+            
+            <div className="w-full md:flex-1 h-28 min-w-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={minichartData}
+                  margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
+                  barGap={3}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="#94a3b8" 
+                    fontSize={8}
+                    fontWeight={600}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    stroke="#94a3b8" 
+                    fontSize={8}
+                    fontWeight={600}
+                    tickLine={false}
+                    axisLine={false}
+                    allowDecimals={false}
+                  />
+                  <RechartsTooltip 
+                    content={({ active, payload }: any) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-slate-900 text-white p-2 rounded-lg shadow-lg border border-slate-800 text-[10px] space-y-1">
+                            <p className="font-bold border-b border-slate-800 pb-1">{data.fullName}</p>
+                            <p className="text-emerald-400 font-medium">✔ Sucesso: {data.Sucesso}</p>
+                            <p className="text-rose-400 font-medium">✘ Falha: {data.Falha}</p>
+                            <p className="text-slate-400 font-semibold border-t border-slate-800 pt-1">Total: {data.Total}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar dataKey="Sucesso" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={15} />
+                  <Bar dataKey="Falha" fill="#f43f5e" radius={[3, 3, 0, 0]} maxBarSize={15} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
           <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
