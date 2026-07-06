@@ -1,0 +1,6 @@
+{
+  "name": "Mala Direta Anti-Spam",
+  "description": "Sistema profissional de Mala Direta com controle de fluxo anti-spam, suporte a múltiplos presets SMTP (Gmail, Outlook) e mapeamento dinâmico de variáveis de planilhas Excel/CSV.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
