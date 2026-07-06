@@ -4,8 +4,7 @@ import nodemailer from 'nodemailer';
 import fs from 'fs';
 import dns from 'dns';
 import { htmlToText } from 'html-to-text';
-import CryptoJS from 'crypto-js';
-import { SmtpConfig, AntiSpamConfig, Recipient, VariableMapping, LogEntry, CampaignStatus } from './src/types.js';
+import { SmtpConfig, AntiSpamConfig, Recipient, VariableMapping, LogEntry, CampaignStatus } from '../src/types';
 
 function getHistoryFile(workspaceId: string): string {
   const safeId = (workspaceId || 'default').replace(/[^a-zA-Z0-9_\-]/g, '') || 'default';
@@ -66,6 +65,14 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Rewrite middleware to normalize Vercel serverless requests
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/server/')) {
+    req.url = req.url.replace('/api/server/', '/api/');
+  }
+  next();
+});
 
 // Workspace Campaign States & Timeouts
 interface WorkspaceCampaign {
@@ -546,7 +553,6 @@ app.post('/api/check-dns', async (req, res) => {
         results.spf.message = `Múltiplos registros SPF encontrados (${spfRecords.length}). Isso invalida a verificação SPF segundo a RFC 7208! Una todos os parâmetros em um único TXT.`;
       }
     } catch (e: any) {
-      // ignore or set message
       results.spf.message = `Sem SPF configurado ou domínio inexistente: ${e.message || e}`;
     }
 
