@@ -602,159 +602,183 @@ const getWorkspaceId = (req: express.Request): string => {
 };
 
 // Start campaign
-app.post('/api/campaign/start', (req, res) => {
-  const workspaceId = getWorkspaceId(req);
-  const ws = getWorkspace(workspaceId);
-  const { recipients, smtpConfig, template, antiSpamConfig, mappings, templateName } = req.body;
+app.post('/api/campaign/start', (req, res, next) => {
+  try {
+    const workspaceId = getWorkspaceId(req);
+    const ws = getWorkspace(workspaceId);
+    const { recipients, smtpConfig, template, antiSpamConfig, mappings, templateName } = req.body;
 
-  if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
-    return res.json({ success: false, error: 'A lista de destinatários está vazia ou é inválida.' });
-  }
-  if (!smtpConfig || !smtpConfig.host || !smtpConfig.auth?.user || !smtpConfig.auth?.pass) {
-    return res.json({ success: false, error: 'Configure as credenciais SMTP antes de enviar.' });
-  }
-  if (!template) {
-    return res.json({ success: false, error: 'O modelo de e-mail está em branco.' });
-  }
+    if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+      return res.json({ success: false, error: 'A lista de destinatários está vazia ou é inválida.' });
+    }
+    if (!smtpConfig || !smtpConfig.host || !smtpConfig.auth?.user || !smtpConfig.auth?.pass) {
+      return res.json({ success: false, error: 'Configure as credenciais SMTP antes de enviar.' });
+    }
+    if (!template) {
+      return res.json({ success: false, error: 'O modelo de e-mail está em branco.' });
+    }
 
-  // Cancel any existing active campaign first
-  if (ws.campaignTimeout) {
-    clearTimeout(ws.campaignTimeout);
-    ws.campaignTimeout = null;
-  }
+    // Cancel any existing active campaign first
+    if (ws.campaignTimeout) {
+      clearTimeout(ws.campaignTimeout);
+      ws.campaignTimeout = null;
+    }
 
-  const campaignId = 'campaign_' + Date.now();
-  
-  ws.activeCampaign = {
-    id: campaignId,
-    status: 'running',
-    total: recipients.length,
-    sent: 0,
-    failed: 0,
-    currentEmail: '',
-    estimatedTimeRemaining: 0,
-    logs: [],
-    startTime: new Date().toISOString(),
-    recipients,
-    smtpConfig,
-    template,
-    antiSpamConfig: antiSpamConfig || { minDelay: 2, maxDelay: 5, batchSize: 50, batchPauseTime: 15 },
-    mappings: mappings || [],
-    currentIndex: 0,
-    templateName: templateName || 'Modelo Geral'
-  };
-
-  addLog(workspaceId, 'info', `🚀 Campanha iniciada! Processando ${recipients.length} destinatários.`);
-  recalculateEstimatedTime(workspaceId);
-  saveCampaignState(workspaceId, ws.activeCampaign);
-
-  // Start sending
-  processNextEmail(workspaceId);
-
-  return res.json({ success: true, campaignId, status: ws.activeCampaign });
-});
-
-// Get active campaign status
-app.get('/api/campaign/status', (req, res) => {
-  const workspaceId = getWorkspaceId(req);
-  const ws = getWorkspace(workspaceId);
-
-  if (!ws.activeCampaign) {
-    return res.json({
-      id: '',
-      status: 'idle',
-      total: 0,
+    const campaignId = 'campaign_' + Date.now();
+    
+    ws.activeCampaign = {
+      id: campaignId,
+      status: 'running',
+      total: recipients.length,
       sent: 0,
       failed: 0,
       currentEmail: '',
       estimatedTimeRemaining: 0,
       logs: [],
-      startTime: null
-    });
-  }
+      startTime: new Date().toISOString(),
+      recipients,
+      smtpConfig,
+      template,
+      antiSpamConfig: antiSpamConfig || { minDelay: 2, maxDelay: 5, batchSize: 50, batchPauseTime: 15 },
+      mappings: mappings || [],
+      currentIndex: 0,
+      templateName: templateName || 'Modelo Geral'
+    };
 
-  return res.json({
-    id: ws.activeCampaign.id,
-    status: ws.activeCampaign.status,
-    total: ws.activeCampaign.total,
-    sent: ws.activeCampaign.sent,
-    failed: ws.activeCampaign.failed,
-    currentEmail: ws.activeCampaign.currentEmail,
-    estimatedTimeRemaining: ws.activeCampaign.estimatedTimeRemaining,
-    logs: ws.activeCampaign.logs,
-    startTime: ws.activeCampaign.startTime
-  });
+    addLog(workspaceId, 'info', `🚀 Campanha iniciada! Processando ${recipients.length} destinatários.`);
+    recalculateEstimatedTime(workspaceId);
+    saveCampaignState(workspaceId, ws.activeCampaign);
+
+    // Start sending
+    processNextEmail(workspaceId);
+
+    return res.json({ success: true, campaignId, status: ws.activeCampaign });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Get active campaign status
+app.get('/api/campaign/status', (req, res, next) => {
+  try {
+    const workspaceId = getWorkspaceId(req);
+    const ws = getWorkspace(workspaceId);
+
+    if (!ws.activeCampaign) {
+      return res.json({
+        id: '',
+        status: 'idle',
+        total: 0,
+        sent: 0,
+        failed: 0,
+        currentEmail: '',
+        estimatedTimeRemaining: 0,
+        logs: [],
+        startTime: null
+      });
+    }
+
+    return res.json({
+      id: ws.activeCampaign.id,
+      status: ws.activeCampaign.status,
+      total: ws.activeCampaign.total,
+      sent: ws.activeCampaign.sent,
+      failed: ws.activeCampaign.failed,
+      currentEmail: ws.activeCampaign.currentEmail,
+      estimatedTimeRemaining: ws.activeCampaign.estimatedTimeRemaining,
+      logs: ws.activeCampaign.logs,
+      startTime: ws.activeCampaign.startTime
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Pause / Resume campaign
-app.post('/api/campaign/toggle', (req, res) => {
-  const workspaceId = getWorkspaceId(req);
-  const ws = getWorkspace(workspaceId);
+app.post('/api/campaign/toggle', (req, res, next) => {
+  try {
+    const workspaceId = getWorkspaceId(req);
+    const ws = getWorkspace(workspaceId);
 
-  if (!ws.activeCampaign) {
-    return res.json({ success: false, error: 'Nenhuma campanha ativa encontrada.' });
+    if (!ws.activeCampaign) {
+      return res.json({ success: false, error: 'Nenhuma campanha ativa encontrada.' });
+    }
+
+    if (ws.activeCampaign.status === 'running') {
+      ws.activeCampaign.status = 'paused';
+      if (ws.campaignTimeout) {
+        clearTimeout(ws.campaignTimeout);
+        ws.campaignTimeout = null;
+      }
+      addLog(workspaceId, 'info', '⏸️ Campanha pausada manualmente pelo usuário.');
+      saveCampaignState(workspaceId, ws.activeCampaign);
+    } else if (ws.activeCampaign.status === 'paused') {
+      ws.activeCampaign.status = 'running';
+      addLog(workspaceId, 'info', '▶️ Campanha retomada manualmente pelo usuário.');
+      saveCampaignState(workspaceId, ws.activeCampaign);
+      processNextEmail(workspaceId);
+    }
+
+    return res.json({ success: true, status: ws.activeCampaign.status });
+  } catch (err) {
+    next(err);
   }
+});
 
-  if (ws.activeCampaign.status === 'running') {
-    ws.activeCampaign.status = 'paused';
+// Cancel active campaign
+app.post('/api/campaign/cancel', (req, res, next) => {
+  try {
+    const workspaceId = getWorkspaceId(req);
+    const ws = getWorkspace(workspaceId);
+
     if (ws.campaignTimeout) {
       clearTimeout(ws.campaignTimeout);
       ws.campaignTimeout = null;
     }
-    addLog(workspaceId, 'info', '⏸️ Campanha pausada manualmente pelo usuário.');
-    saveCampaignState(workspaceId, ws.activeCampaign);
-  } else if (ws.activeCampaign.status === 'paused') {
-    ws.activeCampaign.status = 'running';
-    addLog(workspaceId, 'info', '▶️ Campanha retomada manualmente pelo usuário.');
-    saveCampaignState(workspaceId, ws.activeCampaign);
-    processNextEmail(workspaceId);
+
+    if (ws.activeCampaign) {
+      ws.activeCampaign.status = 'cancelled';
+      addLog(workspaceId, 'error', '🛑 Campanha cancelada pelo usuário.');
+      saveToHistory(workspaceId, ws.activeCampaign);
+      saveCampaignState(workspaceId, null);
+      const finalState = { ...ws.activeCampaign };
+      ws.activeCampaign = null;
+      return res.json({ success: true, message: 'Campanha cancelada com sucesso.', finalState });
+    }
+
+    return res.json({ success: true, message: 'Nenhuma campanha em execução.' });
+  } catch (err) {
+    next(err);
   }
-
-  return res.json({ success: true, status: ws.activeCampaign.status });
-});
-
-// Cancel active campaign
-app.post('/api/campaign/cancel', (req, res) => {
-  const workspaceId = getWorkspaceId(req);
-  const ws = getWorkspace(workspaceId);
-
-  if (ws.campaignTimeout) {
-    clearTimeout(ws.campaignTimeout);
-    ws.campaignTimeout = null;
-  }
-
-  if (ws.activeCampaign) {
-    ws.activeCampaign.status = 'cancelled';
-    addLog(workspaceId, 'error', '🛑 Campanha cancelada pelo usuário.');
-    saveToHistory(workspaceId, ws.activeCampaign);
-    saveCampaignState(workspaceId, null);
-    const finalState = { ...ws.activeCampaign };
-    ws.activeCampaign = null;
-    return res.json({ success: true, message: 'Campanha cancelada com sucesso.', finalState });
-  }
-
-  return res.json({ success: true, message: 'Nenhuma campanha em execução.' });
 });
 
 // Clear campaign / reset
-app.post('/api/campaign/reset', (req, res) => {
-  const workspaceId = getWorkspaceId(req);
-  const ws = getWorkspace(workspaceId);
+app.post('/api/campaign/reset', (req, res, next) => {
+  try {
+    const workspaceId = getWorkspaceId(req);
+    const ws = getWorkspace(workspaceId);
 
-  if (ws.campaignTimeout) {
-    clearTimeout(ws.campaignTimeout);
-    ws.campaignTimeout = null;
+    if (ws.campaignTimeout) {
+      clearTimeout(ws.campaignTimeout);
+      ws.campaignTimeout = null;
+    }
+    ws.activeCampaign = null;
+    saveCampaignState(workspaceId, null);
+    return res.json({ success: true, message: 'Estado resetado com sucesso.' });
+  } catch (err) {
+    next(err);
   }
-  ws.activeCampaign = null;
-  saveCampaignState(workspaceId, null);
-  return res.json({ success: true, message: 'Estado resetado com sucesso.' });
 });
 
 // GET campaign history
-app.get('/api/campaign/history', (req, res) => {
-  const workspaceId = getWorkspaceId(req);
-  const history = getHistory(workspaceId);
-  return res.json({ success: true, history });
+app.get('/api/campaign/history', (req, res, next) => {
+  try {
+    const workspaceId = getWorkspaceId(req);
+    const history = getHistory(workspaceId);
+    return res.json({ success: true, history });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // DELETE single campaign history entry
@@ -782,6 +806,16 @@ app.delete('/api/campaign/history', (req, res) => {
   } catch (err: any) {
     return res.json({ success: false, error: 'Erro ao limpar histórico: ' + err.message });
   }
+});
+
+// Middleware global para tratamento de erros não capturados (Express)
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Unhandled server exception:', err);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    success: false,
+    error: err.message || 'Ocorreu um erro interno inesperado no servidor.'
+  });
 });
 
 

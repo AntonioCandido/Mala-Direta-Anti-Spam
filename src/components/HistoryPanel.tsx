@@ -23,7 +23,7 @@ import autoTable from 'jspdf-autotable';
 import { CampaignHistory, Recipient } from '../types';
 import PdfExportModal from './PdfExportModal';
 import HistoryDashboard from './HistoryDashboard';
-import { apiFetch } from '../api';
+import { safeApiCall, API_ROUTES, HistoryListResponse, HistoryDeleteResponse } from '../api';
 
 interface HistoryPanelProps {
   onRestore: (campaign: CampaignHistory) => void;
@@ -45,23 +45,15 @@ export default function HistoryPanel({ onRestore }: HistoryPanelProps) {
   const fetchHistory = async () => {
     setLoading(true);
     setError('');
-    try {
-      const res = await apiFetch('/api/campaign/history');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setHistory(data.history);
-        } else {
-          setError('Erro ao carregar o histórico de envios.');
-        }
-      } else {
-        setError('Erro na resposta do servidor.');
-      }
-    } catch (err: any) {
-      setError('Erro de conexão com o servidor: ' + (err.message || ''));
-    } finally {
-      setLoading(false);
+    
+    const result = await safeApiCall<HistoryListResponse>(API_ROUTES.CAMPAIGN_HISTORY);
+    
+    if (result.success && result.history) {
+      setHistory(result.history);
+    } else {
+      setError(result.error || 'Erro ao carregar o histórico de envios.');
     }
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -72,38 +64,32 @@ export default function HistoryPanel({ onRestore }: HistoryPanelProps) {
     e.stopPropagation();
     if (!confirm('Deseja realmente excluir este registro do histórico?')) return;
     
-    try {
-      const res = await apiFetch(`/api/campaign/history/${id}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        setHistory(prev => prev.filter(item => item.id !== id));
-        if (expandedCampaignId === id) {
-          setExpandedCampaignId(null);
-        }
-      } else {
-        alert('Erro ao excluir o registro.');
+    const result = await safeApiCall<HistoryDeleteResponse>(API_ROUTES.CAMPAIGN_HISTORY_ENTRY(id), {
+      method: 'DELETE'
+    });
+    
+    if (result.success) {
+      setHistory(prev => prev.filter(item => item.id !== id));
+      if (expandedCampaignId === id) {
+        setExpandedCampaignId(null);
       }
-    } catch (err: any) {
-      alert('Erro ao excluir: ' + err.message);
+    } else {
+      alert(result.error || 'Erro ao excluir o registro.');
     }
   };
 
   const handleClearAll = async () => {
     if (!confirm('ATENÇÃO: Deseja realmente apagar TODO o histórico de campanhas? Esta ação não pode ser desfeita.')) return;
     
-    try {
-      const res = await apiFetch('/api/campaign/history', {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        setHistory([]);
-        setExpandedCampaignId(null);
-      } else {
-        alert('Erro ao limpar histórico.');
-      }
-    } catch (err: any) {
-      alert('Erro ao limpar histórico: ' + err.message);
+    const result = await safeApiCall<HistoryDeleteResponse>(API_ROUTES.CAMPAIGN_HISTORY, {
+      method: 'DELETE'
+    });
+    
+    if (result.success) {
+      setHistory([]);
+      setExpandedCampaignId(null);
+    } else {
+      alert(result.error || 'Erro ao limpar histórico.');
     }
   };
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Trash2, StopCircle, RefreshCw, AlertTriangle, CheckCircle, Clock, Download, Terminal, UserCheck, Send } from 'lucide-react';
 import { SmtpConfig, AntiSpamConfig, Recipient, VariableMapping, CampaignStatus, LogEntry } from '../types';
-import { apiFetch } from '../api';
+import { safeApiCall, API_ROUTES, CampaignStartResponse, CampaignToggleResponse, CampaignCancelResponse, CampaignResetResponse } from '../api';
 
 interface QueuePanelProps {
   recipients: Recipient[];
@@ -41,23 +41,21 @@ export default function QueuePanel({
 
   // Poll status endpoint
   const fetchStatus = async () => {
-    try {
-      const res = await apiFetch('/api/campaign/status');
-      if (res.ok) {
-        const data = await res.json();
-        setStatus(data);
-        
-        // Disable polling if finished or idle
-        if (data.status === 'completed' || data.status === 'cancelled' || data.status === 'idle') {
-          if (data.status !== 'idle') {
-            setPollingActive(false);
-          }
-        } else {
-          setPollingActive(true);
+    const result = await safeApiCall<CampaignStatus>(API_ROUTES.CAMPAIGN_STATUS);
+    if (result.success && result.data) {
+      const data = result.data;
+      setStatus(data);
+      
+      // Disable polling if finished or idle
+      if (data.status === 'completed' || data.status === 'cancelled' || data.status === 'idle') {
+        if (data.status !== 'idle') {
+          setPollingActive(false);
         }
+      } else {
+        setPollingActive(true);
       }
-    } catch (err) {
-      console.error('Erro ao buscar status da fila:', err);
+    } else {
+      console.error('Erro ao buscar status da fila:', result.error);
     }
   };
 
@@ -108,9 +106,8 @@ export default function QueuePanel({
     }
 
     try {
-      const res = await apiFetch('/api/campaign/start', {
+      const result = await safeApiCall<CampaignStartResponse>(API_ROUTES.CAMPAIGN_START, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipients,
           smtpConfig,
@@ -121,13 +118,12 @@ export default function QueuePanel({
         })
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setStatus(data.status);
+      if (result.success && result.status) {
+        setStatus(result.status);
         setPollingActive(true);
         setActiveTab('status');
       } else {
-        setErrorMessage(data.error || 'Falha ao iniciar campanha.');
+        setErrorMessage(result.error || 'Falha ao iniciar campanha.');
       }
     } catch (err: any) {
       setErrorMessage('Erro ao comunicar com o servidor: ' + (err.message || ''));
@@ -136,13 +132,11 @@ export default function QueuePanel({
 
   // Trigger pause/resume
   const handleTogglePause = async () => {
-    try {
-      const res = await apiFetch('/api/campaign/toggle', { method: 'POST' });
-      if (res.ok) {
-        fetchStatus();
-      }
-    } catch (err) {
-      console.error('Erro ao pausar/retomar campanha:', err);
+    const result = await safeApiCall<CampaignToggleResponse>(API_ROUTES.CAMPAIGN_TOGGLE, { method: 'POST' });
+    if (result.success) {
+      fetchStatus();
+    } else {
+      setErrorMessage(result.error || 'Falha ao pausar/retomar a campanha.');
     }
   };
 
@@ -151,37 +145,33 @@ export default function QueuePanel({
     if (!window.confirm('Tem certeza de que deseja parar e cancelar o envio atual definitivamente?')) {
       return;
     }
-    try {
-      const res = await apiFetch('/api/campaign/cancel', { method: 'POST' });
-      if (res.ok) {
-        fetchStatus();
-      }
-    } catch (err) {
-      console.error('Erro ao cancelar campanha:', err);
+    const result = await safeApiCall<CampaignCancelResponse>(API_ROUTES.CAMPAIGN_CANCEL, { method: 'POST' });
+    if (result.success) {
+      fetchStatus();
+    } else {
+      setErrorMessage(result.error || 'Falha ao cancelar a campanha.');
     }
   };
 
   // Reset queue state
   const handleReset = async () => {
-    try {
-      const res = await apiFetch('/api/campaign/reset', { method: 'POST' });
-      if (res.ok) {
-        setStatus({
-          id: '',
-          status: 'idle',
-          total: 0,
-          sent: 0,
-          failed: 0,
-          currentEmail: '',
-          estimatedTimeRemaining: 0,
-          logs: [],
-          startTime: null
-        });
-        setPollingActive(false);
-        onResetApp();
-      }
-    } catch (err) {
-      console.error('Erro ao resetar campanha:', err);
+    const result = await safeApiCall<CampaignResetResponse>(API_ROUTES.CAMPAIGN_RESET, { method: 'POST' });
+    if (result.success) {
+      setStatus({
+        id: '',
+        status: 'idle',
+        total: 0,
+        sent: 0,
+        failed: 0,
+        currentEmail: '',
+        estimatedTimeRemaining: 0,
+        logs: [],
+        startTime: null
+      });
+      setPollingActive(false);
+      onResetApp();
+    } else {
+      setErrorMessage(result.error || 'Falha ao resetar o estado da campanha.');
     }
   };
 

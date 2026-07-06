@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Shield, CheckCircle, AlertTriangle, Play, HelpCircle, Eye, EyeOff, Laptop, Sparkles, Zap, Check, Globe, RefreshCw, Search } from 'lucide-react';
 import { SmtpConfig } from '../types';
-import { apiFetch } from '../api';
+import { safeApiCall, API_ROUTES, SmtpTestResponse, DnsCheckResponse } from '../api';
 
 interface SmtpConfigPanelProps {
   config: SmtpConfig;
@@ -163,28 +163,21 @@ export default function SmtpConfigPanel({ config, onChange, workspaceId }: SmtpC
     }
 
     setTestStatus({ state: 'loading', message: 'Testando conexão e enviando e-mail de teste...' });
-    try {
-      const res = await apiFetch('/api/test-smtp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ smtpConfig: config }),
+    
+    const result = await safeApiCall<SmtpTestResponse>(API_ROUTES.TEST_SMTP, {
+      method: 'POST',
+      body: JSON.stringify({ smtpConfig: config }),
+    });
+
+    if (result.success) {
+      setTestStatus({
+        state: 'success',
+        message: result.message || 'Conexão estabelecida e e-mail de teste enviado com sucesso!'
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setTestStatus({
-          state: 'success',
-          message: data.message || 'Conexão estabelecida e e-mail de teste enviado com sucesso!'
-        });
-      } else {
-        setTestStatus({
-          state: 'error',
-          message: data.error || 'Falha de autenticação ou erro no envio do e-mail de teste.'
-        });
-      }
-    } catch (e: any) {
+    } else {
       setTestStatus({
         state: 'error',
-        message: 'Erro ao conectar à API interna do servidor: ' + (e.message || '')
+        message: result.error || 'Falha de autenticação ou erro no envio do e-mail de teste.'
       });
     }
   };
@@ -201,30 +194,22 @@ export default function SmtpConfigPanel({ config, onChange, workspaceId }: SmtpC
     }
 
     setDnsStatus({ state: 'loading', message: 'Consultando registros de DNS (MX, SPF, DKIM, DMARC) no servidor...', results: null });
-    try {
-      const res = await apiFetch('/api/check-dns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain: senderEmail, selector: dnsSelector }),
+    
+    const result = await safeApiCall<DnsCheckResponse>(API_ROUTES.CHECK_DNS, {
+      method: 'POST',
+      body: JSON.stringify({ domain: senderEmail, selector: dnsSelector }),
+    });
+
+    if (result.success && result.results) {
+      setDnsStatus({
+        state: 'success',
+        message: 'Diagnóstico de DNS concluído com sucesso!',
+        results: result.results as any
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setDnsStatus({
-          state: 'success',
-          message: 'Diagnóstico de DNS concluído com sucesso!',
-          results: data.results
-        });
-      } else {
-        setDnsStatus({
-          state: 'error',
-          message: data.error || 'Falha ao processar a consulta de DNS no servidor.',
-          results: null
-        });
-      }
-    } catch (e: any) {
+    } else {
       setDnsStatus({
         state: 'error',
-        message: 'Erro ao comunicar com o servidor: ' + (e.message || ''),
+        message: result.error || 'Falha ao processar a consulta de DNS no servidor.',
         results: null
       });
     }
