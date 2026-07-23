@@ -87,11 +87,7 @@ export interface HistoryDeleteResponse {
 export async function safeApiCall<T>(url: string, options: RequestInit = {}): Promise<ApiResponse<Partial<T>>> {
   const workspaceId = localStorage.getItem('mala_direta_workspace') || 'default';
   
-  // Normalização do caminho das rotas de backend do Vercel
-  let targetUrl = url;
-  if (targetUrl.startsWith('/api/') && !targetUrl.startsWith('/api/server/')) {
-    targetUrl = targetUrl.replace('/api/', '/api/server/');
-  }
+  const targetUrl = url;
 
   const headers = new Headers(options.headers || {});
   if (!headers.has('X-Workspace-Id')) {

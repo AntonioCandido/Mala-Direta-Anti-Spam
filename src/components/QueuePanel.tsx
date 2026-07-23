@@ -38,42 +38,47 @@ export default function QueuePanel({
   const [activeTab, setActiveTab] = useState<'status' | 'logs'>('status');
 
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const isFetchingRef = useRef(false);
 
-  // Poll status endpoint
+  // Poll status endpoint safely without creating infinite request loops
   const fetchStatus = async () => {
-    const result = await safeApiCall<CampaignStatus>(API_ROUTES.CAMPAIGN_STATUS);
-    if (result.success && result.data) {
-      const data = result.data;
-      setStatus(data);
-      
-      // Disable polling if finished or idle
-      if (data.status === 'completed' || data.status === 'cancelled' || data.status === 'idle') {
-        if (data.status !== 'idle') {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    try {
+      const result = await safeApiCall<CampaignStatus>(API_ROUTES.CAMPAIGN_STATUS);
+      if (result.success && result.data) {
+        const data = result.data;
+        setStatus(data);
+        
+        // Disable polling if finished, cancelled or idle
+        if (data.status === 'completed' || data.status === 'cancelled' || data.status === 'idle') {
           setPollingActive(false);
+        } else {
+          setPollingActive(true);
         }
       } else {
-        setPollingActive(true);
+        if (result.error && !result.error.toLowerCase().includes('rate exceeded')) {
+          console.error('Erro ao buscar status da fila:', result.error);
+        }
       }
-    } else {
-      console.error('Erro ao buscar status da fila:', result.error);
+    } finally {
+      isFetchingRef.current = false;
     }
   };
 
-  // Poll whenever campaign is running or paused
+  // Poll periodically
   useEffect(() => {
     fetchStatus(); // initial fetch
     
-    let interval: NodeJS.Timeout | null = null;
-    if (pollingActive || status.status === 'running' || status.status === 'paused') {
-      interval = setInterval(() => {
-        fetchStatus();
-      }, 1000);
-    }
+    // Poll every 2.5 seconds cleanly
+    const interval = setInterval(() => {
+      fetchStatus();
+    }, 2500);
 
     return () => {
-      if (interval) clearInterval(interval);
+      clearInterval(interval);
     };
-  }, [pollingActive, status.status]);
+  }, []);
 
   // Auto scroll logs console to bottom
   useEffect(() => {

@@ -67,6 +67,14 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Rewrite middleware to normalize serverless requests
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/server/')) {
+    req.url = req.url.replace('/api/server/', '/api/');
+  }
+  next();
+});
+
 // Workspace Campaign States & Timeouts
 interface WorkspaceCampaign {
   activeCampaign: (CampaignStatus & {
@@ -146,7 +154,19 @@ function getFriendlySmtpError(err: any, host: string): string {
 2. Se sua conta for Corporativa (Office 365): O Administrador de TI da sua empresa precisa ativar a opção "SMTP Autenticado" (SMTP AUTH) nas configurações do seu usuário ativo dentro do painel do Administrador do Microsoft 365.`;
   }
   
-  if (errMsg.includes('535') || errMsg.includes('auth') || errMsg.includes('credentials') || errMsg.includes('Authentication') || errMsg.includes('Username and Password not accepted')) {
+  // Specific check for Gmail 535 5.7.8 / Invalid login
+  if (errMsg.includes('535') || errMsg.includes('auth') || errMsg.includes('credentials') || errMsg.includes('Authentication') || errMsg.includes('Username and Password not accepted') || errMsg.includes('5.7.8')) {
+    if (host.toLowerCase().includes('gmail') || errMsg.includes('5.7.8')) {
+      return `Falha de autenticação no Gmail / Google (535 5.7.8).
+
+Sua senha pessoal de e-mail do Google foi recusada. O Google exige o uso de uma "Senha de App" de 16 caracteres.
+
+Como resolver em 4 passos simples:
+1. Acesse https://myaccount.google.com/security
+2. Ative a "Verificação em duas etapas" (2FA) em sua conta Google.
+3. Pesquise por "Senhas de app" na barra de busca no topo da página de Segurança.
+4. Crie uma nova senha de app (ex: "Mala Direta"), copie os 16 caracteres gerados e cole no campo "Senha SMTP" aqui.`;
+    }
     return `Falha de autenticação (E-mail ou Senha inválidos). IMPORTANTE: Provedores como Gmail e Outlook exigem uma "Senha de App" gerada nas configurações de segurança de sua conta de e-mail, em vez de sua senha comum.`;
   }
   

@@ -519,6 +519,21 @@ export default function SmtpConfigPanel({ config, onChange, workspaceId }: SmtpC
             </button>
           </div>
         </div>
+
+        {(preset === 'gmail' || config.host.toLowerCase().includes('gmail')) && (
+          <div className="md:col-span-2 p-3.5 bg-indigo-50/70 border border-indigo-200/80 rounded-xl space-y-2 text-xs text-indigo-950">
+            <div className="flex items-center gap-2 font-bold text-indigo-900">
+              <Shield className="h-4 w-4 text-indigo-600 shrink-0" />
+              <span>Como gerar a "Senha de App" exigida pelo Gmail / Google</span>
+            </div>
+            <ol className="list-decimal list-inside space-y-1 text-indigo-900 leading-relaxed text-[11px]">
+              <li>Acesse a página de Segurança do Google: <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer" className="underline font-bold text-indigo-700 hover:text-indigo-900">myaccount.google.com/security</a></li>
+              <li>Ative a <strong>Verificação em duas etapas (2FA)</strong> caso ainda não esteja ativa.</li>
+              <li>No campo de pesquisa no topo da sua conta Google, digite <strong>"Senhas de app"</strong>.</li>
+              <li>Crie uma nova senha (ex: "Mala Direta"), copie a sequência de 16 letras gerada e cole no campo <strong>Senha SMTP</strong> acima.</li>
+            </ol>
+          </div>
+        )}
       </div>
 
       {/* Local Save Security Warning & Option */}
@@ -581,7 +596,7 @@ export default function SmtpConfigPanel({ config, onChange, workspaceId }: SmtpC
             <div className="flex gap-2.5 items-center">
               {testStatus.state === 'success' && <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />}
               {testStatus.state === 'error' && <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />}
-              <span className="leading-relaxed font-semibold">{testStatus.message}</span>
+              <span className="leading-relaxed font-semibold whitespace-pre-line">{testStatus.message}</span>
             </div>
             {testStatus.state === 'error' && config.host.toLowerCase().trim() === 'smtp.estacio.br' && (
               <button
